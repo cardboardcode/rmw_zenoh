@@ -43,6 +43,56 @@
 #include "rmw/get_topic_endpoint_info.h"
 #include "rmw/impl/cpp/macros.hpp"
 
+namespace
+{
+///=============================================================================
+void client_data_handler(
+  const zenoh::Reply & reply,
+  std::weak_ptr<rmw_zenoh_cpp::ClientData> client_data)
+{
+  if (!reply.is_ok()) {
+    auto reply_err_str = reply.get_err().get_payload().as_string();
+    RMW_ZENOH_LOG_ERROR_NAMED(
+      "rmw_zenoh_cpp",
+      "z_reply_is_ok returned False Reason: %s",
+      reply_err_str.c_str())
+    return;
+  }
+  const zenoh::Sample & sample = reply.get_ok();
+
+  auto sub_data = client_data.lock();
+  if (sub_data == nullptr) {
+    RMW_ZENOH_LOG_ERROR_NAMED(
+      "rmw_zenoh_cpp",
+      "Unable to obtain ClientData from data for %s.",
+      sample.get_keyexpr().as_string_view());
+    return;
+  }
+
+  if (sub_data->is_shutdown()) {
+    return;
+  }
+
+  std::chrono::nanoseconds::rep received_timestamp =
+  std::chrono::system_clock::now().time_since_epoch().count();
+
+  sub_data->add_new_reply(
+    std::make_unique<rmw_zenoh_cpp::ZenohReply>(reply, received_timestamp));
+}
+
+///=============================================================================
+void client_data_drop(std::weak_ptr<rmw_zenoh_cpp::ClientData> client_data)
+{
+  auto sub_data = client_data.lock();
+  if (sub_data == nullptr) {
+    RMW_ZENOH_LOG_ERROR_NAMED(
+      "rmw_zenoh_cpp",
+      "Unable to obtain ClientData");
+    return;
+  }
+}
+}
+
 namespace rmw_zenoh_cpp
 {
 ///=============================================================================
@@ -395,51 +445,16 @@ rmw_ret_t ClientData::send_request(
     reinterpret_cast<const uint8_t *>(request_bytes) + data_length);
   opts.payload = zenoh::Bytes(std::move(raw_bytes));
 
+using namespace std::placeholders;
+
   std::weak_ptr<rmw_zenoh_cpp::ClientData> client_data = shared_from_this();
   zenoh::ZResult result;
   std::string parameters;
   context_impl->session()->get(
     keyexpr_.value(),
     parameters,
-    [client_data](const zenoh::Reply & reply) {
-      if (!reply.is_ok()) {
-        auto reply_err_str = reply.get_err().get_payload().as_string();
-        RMW_ZENOH_LOG_ERROR_NAMED(
-          "rmw_zenoh_cpp",
-          "z_reply_is_ok returned False Reason: %s",
-          reply_err_str.c_str())
-        return;
-      }
-      const zenoh::Sample & sample = reply.get_ok();
-
-      auto sub_data = client_data.lock();
-      if (sub_data == nullptr) {
-        RMW_ZENOH_LOG_ERROR_NAMED(
-          "rmw_zenoh_cpp",
-          "Unable to obtain ClientData from data for %s.",
-          sample.get_keyexpr().as_string_view());
-        return;
-      }
-
-      if (sub_data->is_shutdown()) {
-        return;
-      }
-
-      std::chrono::nanoseconds::rep received_timestamp =
-      std::chrono::system_clock::now().time_since_epoch().count();
-
-      sub_data->add_new_reply(
-        std::make_unique<rmw_zenoh_cpp::ZenohReply>(reply, received_timestamp));
-    },
-    [client_data]() {
-      auto sub_data = client_data.lock();
-      if (sub_data == nullptr) {
-        RMW_ZENOH_LOG_ERROR_NAMED(
-          "rmw_zenoh_cpp",
-          "Unable to obtain ClientData");
-        return;
-      }
-    },
+    std::bind(&client_data_handler, _1, client_data),
+    std::bind(&client_data_drop, client_data),
     std::move(opts),
     &result);
   if (result != Z_OK) {
