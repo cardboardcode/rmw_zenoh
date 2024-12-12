@@ -43,6 +43,8 @@
 #include "rmw/get_topic_endpoint_info.h"
 #include "rmw/impl/cpp/macros.hpp"
 
+using namespace std::placeholders;
+
 namespace
 {
 ///=============================================================================
@@ -74,7 +76,7 @@ void client_data_handler(
   }
 
   std::chrono::nanoseconds::rep received_timestamp =
-  std::chrono::system_clock::now().time_since_epoch().count();
+    std::chrono::system_clock::now().time_since_epoch().count();
 
   sub_data->add_new_reply(
     std::make_unique<rmw_zenoh_cpp::ZenohReply>(reply, received_timestamp));
@@ -91,7 +93,7 @@ void client_data_drop(std::weak_ptr<rmw_zenoh_cpp::ClientData> client_data)
     return;
   }
 }
-}
+}  // namespace
 
 namespace rmw_zenoh_cpp
 {
@@ -444,8 +446,6 @@ rmw_ret_t ClientData::send_request(
     reinterpret_cast<const uint8_t *>(request_bytes),
     reinterpret_cast<const uint8_t *>(request_bytes) + data_length);
   opts.payload = zenoh::Bytes(std::move(raw_bytes));
-
-using namespace std::placeholders;
 
   std::weak_ptr<rmw_zenoh_cpp::ClientData> client_data = shared_from_this();
   zenoh::ZResult result;
