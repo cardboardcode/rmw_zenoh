@@ -1,0 +1,43 @@
+version: '3.2'
+services:
+  router:
+    build:
+      context: .
+    image: zenoh:latest
+    stdin_open: true
+    tty: true
+    container_name: router_container
+    command: bash -c "source ./install/setup.bash && ros2 run rmw_zenoh_cpp rmw_zenohd"
+    volumes:
+    - /dev/shm:/dev/shm
+    network_mode: host
+
+
+  talker:
+    build:
+      context: .
+    image: zenoh:latest
+    stdin_open: true
+    tty: true
+    container_name: talker_container
+    command: bash -c "source ./install/setup.bash && ros2 run demo_nodes_cpp talker"
+    volumes:
+    - /dev/shm:/dev/shm
+    network_mode: host
+    depends_on:
+    - router
+
+  listener:
+    build:
+      context: .
+    image: zenoh:latest
+    stdin_open: true
+    tty: true
+    container_name: listener_container
+    command: bash -c "source ./install/setup.bash && ros2 run demo_nodes_cpp listener"
+    volumes:
+    - /dev/shm:/dev/shm
+    network_mode: host
+    depends_on:
+    - router
+
